@@ -1,0 +1,108 @@
+def MS_NAME = project.name.toLowerCase()
+def IMAGE_NAME = "auth-redirect"
+
+buildscript {
+    ext.versions = [
+            baseImage                   : '0.1.0',
+            gradleDockerPlugin          : '3.2.4',
+            serviceVersion              : '0.1.1',
+            powerMock                   : '1.7.4'
+    ]
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath "com.bmuschko:gradle-docker-plugin:$versions.gradleDockerPlugin"
+    }
+}
+
+apply plugin: 'war'
+apply plugin: 'maven'
+apply plugin: 'com.bmuschko.docker-remote-api'
+apply plugin: 'jacoco'
+apply plugin: 'eclipse'
+
+import com.bmuschko.gradle.docker.tasks.container.DockerCreateContainer
+import com.bmuschko.gradle.docker.tasks.container.DockerRemoveContainer
+import com.bmuschko.gradle.docker.tasks.container.DockerStartContainer
+import com.bmuschko.gradle.docker.tasks.container.DockerStopContainer
+import com.bmuschko.gradle.docker.tasks.image.DockerBuildImage
+import com.bmuschko.gradle.docker.tasks.image.Dockerfile
+
+dependencies {
+    compileOnly "javax:javaee-api:7.0"
+    testCompile "org.glassfish.jersey.core:jersey-common:2.22.2"
+    testImplementation "javax:javaee-api:7.0"
+}
+
+group = 'test.auth-redirect'
+version "${versions.serviceVersion}"
+
+check.dependsOn jacocoTestCoverageVerification
+check.dependsOn jacocoTestReport
+
+war {
+    archiveName "ROOT.war"
+}
+
+task copyWar(type: Copy) {
+    dependsOn war
+    from war.archivePath
+    into 'build/docker'
+}
+
+task createDockerfile(type: Dockerfile) {
+    dependsOn copyWar
+    destFile = project.file('build/docker/Dockerfile')
+    from "payara/micro"
+    copyFile(war.archiveName, '$DEPLOY_DIR')
+}
+
+task buildDocker(type: DockerBuildImage) {
+    dependsOn createDockerfile
+    inputDir = createDockerfile.destFile.parentFile
+    tag = "$IMAGE_NAME:$versions.serviceVersion"
+}
+
+task stopDocker(type: DockerStopContainer) {
+    targetContainerId { MS_NAME }
+    // ignore exception if container does not exist otherwise throw it
+    onError { exception ->
+        if (exception != null && exception.message != null && !exception.message.contains('No such container')) {
+            throw exception
+        }
+    }
+}
+
+task removeDocker(type: DockerRemoveContainer) {
+    dependsOn stopDocker
+    targetContainerId { MS_NAME }
+    // ignore exception if container does not exist otherwise throw it
+    onError { exception ->
+        if (exception != null && exception.message != null && !exception.message.contains('No such container')) {
+            throw exception
+        }
+    }
+}
+
+task createDocker(type: DockerCreateContainer) {
+    dependsOn buildDocker
+    dependsOn removeDocker
+    targetImageId { buildDocker.getImageId() }
+
+    env = [
+            "APPLICATION_NAME=" + project.name.toLowerCase(),
+            "APPLICATION_VERSION=$versions.serviceVersion"
+    ]
+
+    containerName = MS_NAME
+    portBindings = [serverAuthenticationServicePort + ':8080',
+                    Integer.parseInt(serverAuthenticationServicePort) + 1 + ':9009']	// Debug
+}
+
+task startApp(type: DockerStartContainer) {
+    dependsOn createDocker
+    targetContainerId { MS_NAME }
+}

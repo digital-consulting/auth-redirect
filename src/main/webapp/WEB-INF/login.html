@@ -1,0 +1,23 @@
+<html>
+<body onload="setActionAttribute()">
+<h3>Login</h3>
+
+<form action="/authenticate?redirect_uri=" method="post" id="loginForm">
+Username  <input type="text" name="name" /><br/>
+Password  <input type="password" name="password" /><br/>
+<input type="submit" value="Submit" />
+</form>
+<script>
+function get(name){
+   if(name=(new RegExp('[?&]'+encodeURIComponent(name)+'=([^&]*)')).exec(location.search))
+      return decodeURIComponent(name[1]);
+}
+
+function setActionAttribute() {
+    var currentForm = document.getElementById("loginForm");
+    var currentLocation = currentForm.action + get("redirect_uri");
+    currentForm.action = currentLocation;
+}
+</script>
+</body>
+</html>
